@@ -57,15 +57,16 @@ def getYAMLFile(name):
 def getYAMLFilenames():
     """ Get all yamls file names in yaml_path_dir
     """
-    model_list = {}
+    model_list = []
     for entry in os.listdir(yaml_path_dir):
         
         if entry.endswith('.yaml'):
             model_name = entry.split('.')[0]
             filename = os.path.join(yaml_path_dir, entry)
-            model_list[model_name] = {'filename'     : filename,
-                                      'last modified': str(time.ctime(os.path.getmtime(filename))), 
-                                      'size'         : str(os.path.getsize(filename)*0.001)+' ko'}
+            model_list.append({'model_name'   : model_name,
+                               'filename'     : filename,
+                               'last_modified': str(time.ctime(os.path.getmtime(filename))), 
+                               'size'         : str(os.path.getsize(filename)*0.001)+' ko'})
     return model_list
 
 
@@ -171,7 +172,7 @@ def models_list():
     """
     list = getYAMLFilenames()
 
-    return list
+    return {'models' : list}
 
 #   Model creation
 ############################################################################
@@ -334,7 +335,7 @@ def model_atomicblock_parameters(model_name, block_label):
     """ get the parameters of the block
     """
     # get the models names (blocking operation)
-    cmd = ["python2.7", devsimpy_nogui, os.path.join(yaml_path_dir, model_name + '.yaml'), "-getblockargs", block_label]
+    cmd = ["python2.7", devsimpy_nogui, os.path.join(yaml_path_dir, model_name + '.yaml'), "-blockargs", block_label]
     output = subprocess.check_output(cmd)
 
     return {'success':True, 'block':json.loads(output)}
@@ -354,7 +355,7 @@ def save_yaml(model_name, block_label):
     data = request.json
         
     # perform update (blocking operation)
-    cmd = ["python2.7", devsimpy_nogui, model_abs_filename, "-setblockargs", block_label, json.dumps(data)]
+    cmd = ["python2.7", devsimpy_nogui, model_abs_filename, "-blockargs", block_label, "-updateblockargs", json.dumps(data)]
     output = subprocess.check_output(cmd)
     #return {'output' : output}
     return {'success':True, 'block':json.loads(output)}
