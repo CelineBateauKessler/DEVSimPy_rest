@@ -900,10 +900,46 @@ def simulation_time_value_result(simu_name, result_filename):
         for line in fp:
             t,v = line.split(" ")
             result.append({"time":t, "value":v.rstrip('\r\n')})
-
+                
     return {"simulation_name": simu_name,
             "result_filename": result_filename,
-            "data": result}
+            "data": result}             
+    
+@route('/simulations/<simu_name>/results/<result_filename>/<part>', method=['OPTIONS','GET'])
+@enable_cors
+def simulation_time_value_result(simu_name, result_filename, part):
+    """
+    """
+    status = update_status(simu_name)
+
+    if status != 'FINISHED':
+        return {'success':False, 'simulation_name' : simu_name, 'info': status }
+
+    # Build the diagram data as :
+    # - 1 list of labels (X or Time axis) called category TBC : what if time delta are not constant???
+    # - 1 list of values (Y or Amplitude axis) called data
+    result = []
+    # TODO add check on file validity
+    first = int(part) * 1000 + 1
+    last  = first + 1000
+    count = 0
+    is_last_part = True
+    with open(os.path.join(yaml_path_dir, result_filename)) as fp:
+        for line in fp:
+            count +=1
+            if (count >= first) and (count <= last):
+                t,v = line.split(" ")
+                result.append({"time":t, "value":v.rstrip('\r\n')})
+            if count > last:
+                is_last_part = False
+                break;
+                
+    return {"simulation_name": simu_name,
+            "result_filename": result_filename,
+            "part":part,
+            "is_last_part":is_last_part,
+            "data": result}             
+    
 
 #   Simulation logs
 ############################################################################
