@@ -10,6 +10,7 @@ from datetime import datetime
 import pymongo
 from pymongo import MongoClient 
 from bson import objectid
+import traceback
 
 import __builtin__
 from compiler.pyassem import Block
@@ -254,8 +255,7 @@ def model_representation(model_name):
         data = getModelAsJSON(model_filename)
         return {"success"    : data!={} and data!=[],
                 "model_name" : model_name, 
-                "model"      : json.loads(data)}#data} 
-                #"model"      : json.loads(data) }
+                "model"      : json.loads(data)}
     elif request.headers['Accept'] == 'text/x-yaml':
         data = getYAMLFile(model_filename)
         return {"success"    : data!={} and data!=[],
@@ -478,15 +478,6 @@ def update_status (simu_name):
             simu_process = global_running_sim[simu_name]
             simu_process.poll()
             returncode = simu_process.returncode
-            
-            # update report TBC
-            with open(simu['output_filename'], 'r') as fout:
-                report = fout.read()
-                try:
-                    json_report = json.loads(report)
-                    simu['report'] = json_report
-                except:
-                    simu['report'] = report
         
             # test if process is finished <=> (returnCode != None)
             if (returncode != None):
@@ -494,9 +485,15 @@ def update_status (simu_name):
                 simu['status'] = "FINISHED"
                 simu['exit_code']= returncode
                 
+                # get report
+                with open(simu_name+'.report', 'r') as fout:
+                    report = fout.read()
+                    json_report = json.loads(report)
+                    simu['report'] = json_report
+                    
                 del global_running_sim[simu_name]
                 
-                with open(simu['log_filename'], 'r') as flog:
+                with open(simu_name+'.log', 'r') as flog:
                     simu['log'] = flog.read()   
                 
         except:
@@ -504,6 +501,10 @@ def update_status (simu_name):
             # might happen in case of server reboot...
             simu['status'] = "FINISHED"
             simu['exit_code'] = "UNEXPECTED_END"
+            if 'report' not in simu:
+                simu['report'] = {'success':False, 'output':[]}# for compatibility
+            simu['log'] = traceback.format_exc()
+            #raise
         
         # update in database                 
         db.simulations.replace_one ({'_id' : objectid.ObjectId(simu_name)}, simu)
@@ -554,7 +555,7 @@ def send_via_socket(simu_name, data):
     """
     try:
         simu = db.simulations.find_one({'_id' : objectid.ObjectId(simu_name)})
-        socket_address = '\0' + simu['socket_id']
+        socket_address = '\0' + 'socket_' + simu_name
         comm_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         #socket_address = ('localhost', 5555)
         #comm_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -649,14 +650,14 @@ def simulate():
     
     ### Launch simulation
     ### NB : Don't set shell=True because then it is not possible to interact with the process inside the shell
-    socket_id = "celinebateaukessler."+simu_name # has to be unique
+    
+    #socket_id = 'user_name' + simu_name # has to be unique
     #--> TODO replace with DEVS+username+simu_name
     # using the user name as a prefix is a convention on PythonAnywhere
 
-    cmd = ['python2.7', devsimpy_nogui, abs_model_filename, str(sim_duration), socket_id]
-    fout = open(simu_name+'.out', 'w+') # where simulation execution report will be written
-    flog = open(simu_name+'.log', 'w+') # where simulation execution report will be written
-    process = subprocess.Popen(cmd, stdout=fout, stderr=flog, close_fds=True)
+    cmd = ['python2.7', devsimpy_nogui, abs_model_filename, str(sim_duration), '-remote', '-name', simu_name]
+    fout = open(simu_name+'.log', 'w+') # where simulation execution report will be written
+    process = subprocess.Popen(cmd, stdout=fout, stderr=subprocess.STDOUT, close_fds=True)
     # Call to Popen is non-blocking, BUT, the child process inherits the file descriptors from the parent,
     # and that will include the web app connection to the WSGI server,
     # so the process needs to run and finish before the connection is released and the server notices that the request is finished.
@@ -666,9 +667,9 @@ def simulate():
     global_running_sim[simu_name] = process
     
     # Additional information on simulation
-    sim_data['output_filename'] = simu_name+'.out'
-    sim_data['log_filename']    = simu_name+'.log'
-    sim_data['socket_id']       = socket_id
+    #sim_data['output_filename'] = simu_name+'.out'
+    #sim_data['log_filename']    = simu_name+'.log'
+    #sim_data['socket_id']       = socket_id
     sim_data['pid']             = process.pid
     sim_data['status']          = 'RUNNING'
     sim_data['exit_code']       = 0
@@ -712,10 +713,10 @@ def delete_simulation(simu_name):
         global_running_sim[simu_name].send_signal(signal.SIGKILL)
         
     simu = db.simulations.find_one({'_id': objectid.ObjectId(simu_name)})
-    if os.path.exists(simu['output_filename']):
-        os.remove(simu['output_filename'])
-    if os.path.exists(simu['log_filename']):
-        os.remove(simu['log_filename'])
+    if os.path.exists(simu_name + '.report'):
+        os.remove(simu_name + '.report')
+    if os.path.exists(simu_name + '.log'):
+        os.remove(simu_name + '.log')
     # TODO remove also generated result files when well managed...
     db.simulations.delete_one({'_id': objectid.ObjectId(simu_name)})
     
@@ -953,7 +954,7 @@ def simulation_logs(simu_name):
         return {'success':False, 'simulation_name' : simu_name, 'info': status}
 
     simu = db.simulations.find_one({'_id' : objectid.ObjectId(simu_name)})
-    with open(simu['log_filename'], 'r') as flog:
+    with open(simu_name+'.log', 'r') as flog:
         simu['log'] = flog.read()
     db.simulations.update_one({'_id' : objectid.ObjectId(simu_name)}, 
                               {'$set' : {'log' : simu['log']}})
