@@ -495,6 +495,11 @@ def update_status (simu_name):
                 
                 with open(simu_name+'.log', 'r') as flog:
                     simu['log'] = flog.read()   
+                    
+                with open(simu_name+'.err', 'r') as ferr:
+                    simu['error'] = ferr.read()  
+                    if simu['error'] != '':
+                        simu['report']['success']=False
                 
         except:
             # Simulation is marked as RUNNING but process cannot be found
@@ -503,7 +508,7 @@ def update_status (simu_name):
             simu['exit_code'] = "UNEXPECTED_END"
             if 'report' not in simu:
                 simu['report'] = {'success':False, 'output':[]}# for compatibility
-            simu['log'] = traceback.format_exc()
+            simu['error'] = traceback.format_exc()
             #raise
         
         # update in database                 
@@ -657,7 +662,8 @@ def simulate():
 
     cmd = ['python2.7', devsimpy_nogui, abs_model_filename, str(sim_duration), '-remote', '-name', simu_name]
     fout = open(simu_name+'.log', 'w+') # where simulation execution report will be written
-    process = subprocess.Popen(cmd, stdout=fout, stderr=subprocess.STDOUT, close_fds=True)
+    ferr = open(simu_name+'.err', 'w+')
+    process = subprocess.Popen(cmd, stdout=fout, stderr=ferr, close_fds=True)
     # Call to Popen is non-blocking, BUT, the child process inherits the file descriptors from the parent,
     # and that will include the web app connection to the WSGI server,
     # so the process needs to run and finish before the connection is released and the server notices that the request is finished.
