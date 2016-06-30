@@ -14,6 +14,7 @@ import traceback
 
 import __builtin__
 from compiler.pyassem import Block
+from warnings import catch_warnings
 
 #import BaseDEVS, DomainBehavior, DomainStructure
 
@@ -423,6 +424,7 @@ def add_unique_postfix(fn):
 def create_image(model_name, block_label):
     upload    = request.files.get('upload')
     name, ext = os.path.splitext(upload.filename)
+    #print('UPLOAD ' + upload.filename)
     
     if ext not in IMG_FILE_EXTENSIONS:
         return {'success'  : False, 
@@ -446,7 +448,7 @@ def create_image(model_name, block_label):
 @enable_cors
 def get_image(model_name, block_label, img_name):
     name, ext = os.path.splitext(img_name)
-        
+    #print('DOWNLOAD ' + img_name)
     if ext not in IMG_FILE_EXTENSIONS:
         return {'success' : False, 'info': 'Only .jpg files allowed.'}
     
@@ -707,9 +709,7 @@ def simulation_report(simu_name):
 
 #   Simulation deletion
 ############################################################################
-@route('/simulations/<simu_name>', method=['OPTIONS','DELETE'])
-@enable_cors
-def delete_simulation(simu_name):
+def delete_one_simulation(simu_name):
     status = update_status(simu_name)
     
     if status == 'UNKNOWN':
@@ -723,9 +723,31 @@ def delete_simulation(simu_name):
         os.remove(simu_name + '.report')
     if os.path.exists(simu_name + '.log'):
         os.remove(simu_name + '.log')
+    if os.path.exists(simu_name + '.err'):
+        os.remove(simu_name + '.err')
     # TODO remove also generated result files when well managed...
     db.simulations.delete_one({'_id': objectid.ObjectId(simu_name)})
+
+@route('/simulations', method=['OPTIONS','DELETE'])
+@enable_cors
+def delete_all_simulations():
+        
+    print(request.params)
+    if 'model_name' in request.params:
+        cursor = db.simulations.find({'model_name':request.params.model_name})
+    else:
+        cursor = db.simulations.find()
+        
+    for simu in cursor:
+        delete_one_simulation(str(simu['_id']))
     
+    return {'success':True}
+
+@route('/simulations/<simu_name>', method=['OPTIONS','DELETE'])
+@enable_cors
+def delete_simulation(simu_name):
+    
+    delete_one_simulation(simu_name)    
        
     return {'success':True, 'simulation_name':simu_name}
 
@@ -905,18 +927,24 @@ def simulation_time_value_result(simu_name, result_filename):
     # TODO add check on file validity
     with open(os.path.join(yaml_path_dir, result_filename)) as fp:
         for line in fp:
-            t,v = line.split(" ")
-            result.append({"time":t, "value":v.rstrip('\r\n')})
+            print(line)
+            t,v = line.split(" ", 1)
+            v = v.replace('\'', '"')# for JSON compatibility
+            v = v.rstrip('\r\n')
+            try :
+                v = float(v)
+            except :
+                v = v
+            result.append({"time":float(t), "value":v})
                 
     return {"simulation_name": simu_name,
             "result_filename": result_filename,
             "data": result}             
     
-@route('/simulations/<simu_name>/results/<result_filename>/<part>', method=['OPTIONS','GET'])
+"""@route('/simulations/<simu_name>/results/<result_filename>/<part>', method=['OPTIONS','GET'])
 @enable_cors
 def simulation_time_value_result(simu_name, result_filename, part):
-    """
-    """
+    
     status = update_status(simu_name)
 
     if status != 'FINISHED':
@@ -935,7 +963,8 @@ def simulation_time_value_result(simu_name, result_filename, part):
         for line in fp:
             count +=1
             if (count >= first) and (count <= last):
-                t,v = line.split(" ")
+                t,v = line.split(" ", 1)
+                v = v.replace('\'', '"')
                 result.append({"time":t, "value":v.rstrip('\r\n')})
             if count > last:
                 is_last_part = False
@@ -946,7 +975,7 @@ def simulation_time_value_result(simu_name, result_filename, part):
             "part":part,
             "is_last_part":is_last_part,
             "data": result}             
-    
+"""
 
 #   Simulation logs
 ############################################################################
